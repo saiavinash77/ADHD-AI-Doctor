@@ -1,0 +1,6 @@
+{
+  "name": "AI ADHD Doctor",
+  "description": "An 11-question screening application for ADHD, focus, and attention patterns, providing personalized coping tips and secure progress tracking.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,79 @@
+{
+  "entities": {
+    "Score": {
+      "title": "Score",
+      "description": "User ADHD diagnosis diagnostic evaluation score and metrics",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "The unique Firebase UID or guest device ID of the user"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of record creation"
+        },
+        "totalScore": {
+          "type": "integer"
+        },
+        "probability": {
+          "type": "string"
+        },
+        "partAScore": {
+          "type": "integer"
+        },
+        "isPartAPositive": {
+          "type": "boolean"
+        },
+        "inattentionScore": {
+          "type": "integer"
+        },
+        "hyperactivityScore": {
+          "type": "integer"
+        },
+        "responses": {
+          "type": "array"
+        },
+        "age": {
+          "type": "integer"
+        },
+        "country": {
+          "type": "string"
+        },
+        "gender": {
+          "type": "string"
+        }
+      },
+      "required": ["userId", "totalScore", "probability", "partAScore", "isPartAPositive", "inattentionScore", "hyperactivityScore"]
+    },
+    "User": {
+      "title": "User",
+      "description": "Registered user metadata",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "hasPaid": {
+          "type": "boolean"
+        }
+      },
+      "required": ["email", "hasPaid"]
+    }
+  },
+  "firestore": {
+    "/scores/{scoreId}": {
+      "schema": "Score",
+      "description": "Evaluation results and diagnostic history logs"
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Registered user profile details and premium unlock records"
+    }
+  }
+}
