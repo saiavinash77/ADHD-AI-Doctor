@@ -6,18 +6,18 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { 
+import {
   ArrowLeft,
-  ChevronLeft, 
-  ChevronRight, 
+  ChevronLeft,
+  ChevronRight,
   ChevronDown,
-  RotateCcw, 
-  Printer, 
-  AlertTriangle, 
-  CheckCircle2, 
-  Info, 
-  Activity, 
-  BookOpen, 
+  RotateCcw,
+  Printer,
+  AlertTriangle,
+  CheckCircle2,
+  Info,
+  Activity,
+  BookOpen,
   HelpCircle,
   Clock,
   Shield,
@@ -31,7 +31,9 @@ import {
   TrendingUp,
   Heart,
   ClipboardList,
-  Sliders
+  Sliders,
+  Bot,
+  Stethoscope
 } from 'lucide-react';
 import { QUESTIONS, CHOICES, PRICING_CHOICES } from './data';
 import { ScreenResponse, ScoreBreakdown, ScreenState, ScoreChoice } from './types';
@@ -40,23 +42,43 @@ import ScoreHistory from './components/ScoreHistory';
 import { getPersonalizedTips, getMedicalGuidance } from './tipsData';
 import { jsPDF } from 'jspdf';
 
-// Clerk imports
-import { useUser, useClerk, SignInButton, SignUpButton, UserButton } from '@clerk/clerk-react';
-import { 
-  collection, 
-  addDoc, 
-  getDoc, 
-  setDoc, 
-  doc, 
-  query, 
-  where, 
-  getDocs 
+// Auth0 imports
+import { useAuth0 } from '@auth0/auth0-react';
+import {
+  collection,
+  addDoc,
+  getDoc,
+  setDoc,
+  doc,
+  query,
+  where,
+  getDocs
 } from 'firebase/firestore';
 import { db } from './firebase';
 
+// Detect whether Auth0 is properly configured (both VITE_AUTH0_DOMAIN and
+// VITE_AUTH0_CLIENT_ID present). Computed at module load so the conditional
+// hook calls below always take the same branch on every render.
+const isAuth0Configured =
+  typeof import.meta.env.VITE_AUTH0_DOMAIN === 'string' &&
+  import.meta.env.VITE_AUTH0_DOMAIN.length > 0 &&
+  typeof import.meta.env.VITE_AUTH0_CLIENT_ID === 'string' &&
+  import.meta.env.VITE_AUTH0_CLIENT_ID.length > 0;
+
 export default function App() {
-  const { user, isLoaded: userLoaded } = useUser();
-  const { signOut: clerkSignOut } = useClerk();
+  // useAuth0() throws when there is no <Auth0Provider> in the tree. Gate
+  // it on the module-level config flag so the app still renders without
+  // auth configured. The condition never changes between renders, so React's
+  // hook order is stable.
+  /* eslint-disable react-hooks/rules-of-hooks */
+  const auth0 = isAuth0Configured ? useAuth0() : null;
+  /* eslint-enable react-hooks/rules-of-hooks */
+  // Re-derive the same names the rest of the component already uses
+  // (user / userLoaded) so the sync logic and UI don't need restructuring.
+  const user = auth0?.user ?? null;
+  const userLoaded = auth0 ? !auth0.isLoading : true;
+  const loginWithRedirect = auth0?.loginWithRedirect ?? (() => {});
+  const auth0Logout = auth0?.logout ?? (() => {});
   
   const [screen, setScreen] = useState<ScreenState>('WELCOME');
   const [currentQuestionIdx, setCurrentQuestionIdx] = useState<number>(0);
@@ -121,17 +143,22 @@ export default function App() {
     }
   };
 
-  // Listen for Auth changes (Clerk)
+  // Listen for Auth changes (Auth0)
   useEffect(() => {
     setUserLoading(!userLoaded);
-    
+
     if (userLoaded && user) {
-      // User is signed in with Clerk
+      // User is signed in with Auth0
       const syncUserData = async () => {
         try {
-          const userDocRef = doc(db, 'users', user.id);
+          // Auth0 user identifier: `user.sub` (e.g. "auth0|abc123"). Fall
+          // back to `user.email` so that test/social logins without a stable
+          // sub still get a usable document id.
+          const uid = (user as any).sub || user.email || 'unknown';
+          const userEmail = user.email;
+          const userDocRef = doc(db, 'users', uid);
           const userDoc = await getDoc(userDocRef);
-          
+
           if (userDoc.exists()) {
             const data = userDoc.data();
             if (data.hasPaid) {
@@ -140,7 +167,7 @@ export default function App() {
             } else {
               const localPaid = localStorage.getItem('adhd_clinical_terminal_paid') === 'true';
               if (localPaid) {
-                await setDoc(userDocRef, { hasPaid: true, email: user.primaryEmailAddress?.emailAddress }, { merge: true });
+                await setDoc(userDocRef, { hasPaid: true, email: userEmail }, { merge: true });
                 setHasPaid(true);
               } else {
                 setHasPaid(false);
@@ -148,25 +175,25 @@ export default function App() {
             }
           } else {
             const localPaid = localStorage.getItem('adhd_clinical_terminal_paid') === 'true';
-            await setDoc(userDocRef, { 
-              email: user.primaryEmailAddress?.emailAddress, 
+            await setDoc(userDocRef, {
+              email: userEmail,
               createdAt: new Date().toISOString(),
-              hasPaid: localPaid 
+              hasPaid: localPaid
             });
             if (localPaid) setHasPaid(true);
           }
-          
-          await syncGuestDataToUser(user.id);
+
+          await syncGuestDataToUser(uid);
         } catch (error) {
           console.error("Error syncing user data:", error);
         }
       };
-      
+
       syncUserData();
     } else if (userLoaded && !user) {
       const localPaid = localStorage.getItem('adhd_clinical_terminal_paid') === 'true';
       setHasPaid(localPaid);
-      
+
       // Redirect to welcome screen if not signed in and trying to access protected screens
       if (screen !== 'WELCOME') {
         setScreen('WELCOME');
@@ -230,7 +257,7 @@ export default function App() {
         body: JSON.stringify({ 
           priceId: 'pdt_0NirrSJQFlEwHSDF1I0ni',
           quantity: 1,
-          customerId: user?.primaryEmailAddress?.emailAddress,
+          customerId: user?.email,
           successUrl: `${window.location.origin}?payment=success`,
           cancelUrl: `${window.location.origin}?payment=cancelled`
         })
@@ -832,13 +859,16 @@ export default function App() {
       <div className="max-w-6xl mx-auto w-full mb-4 no-print">
         <div className="bg-white rounded-3xl border border-lime-100/80 px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-3 shadow-xs">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-lime-500/10 rounded-2xl flex items-center justify-center border border-lime-200 shrink-0">
-              <Activity className="w-5 h-5 text-lime-600 animate-pulse" />
+            <div className="relative w-10 h-10 bg-lime-500/10 rounded-2xl border border-lime-200 shrink-0 rotate-6 hover:rotate-12 transition-transform duration-300">
+              <Bot className="w-5 h-5 text-lime-700 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+              <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-white rounded-full border border-lime-300 flex items-center justify-center shadow-xs">
+                <Stethoscope className="w-2.5 h-2.5 text-lime-600" />
+              </div>
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h1 id="app-title-display" className="font-display font-medium text-lg text-slate-900 tracking-tight leading-none">
-                  ADHD Diagnostic Terminal
+                  ADHD AI-Doctor
                 </h1>
                 <span className="text-[9px] font-black uppercase tracking-widest bg-lime-100 text-lime-850 px-2 py-0.5 rounded-full border border-lime-200">
                   Clinical Engine
@@ -852,28 +882,44 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2.5">
-            {/* Firebase Auth Header Controls */}
-            {userLoading ? (
+            {/* Auth Header Controls (Auth0) */}
+            {!isAuth0Configured ? (
+              <span className="text-[10px] font-bold text-slate-400" title="Set VITE_AUTH0_DOMAIN and VITE_AUTH0_CLIENT_ID in .env.local to enable sign-in">
+                Auth disabled
+              </span>
+            ) : userLoading ? (
               <span className="text-[10px] font-bold text-slate-400">Loading auth...</span>
             ) : user ? (
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200 max-w-[150px] truncate select-text" title={user.primaryEmailAddress?.emailAddress || ''}>
-                  {user.primaryEmailAddress?.emailAddress}
+                <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200 max-w-[150px] truncate select-text" title={user.email || ''}>
+                  {user.email}
                 </span>
-                <UserButton afterSignOutUrl="/" />
+                <button
+                  onClick={() =>
+                    auth0Logout({ logoutParams: { returnTo: window.location.origin } })
+                  }
+                  className="text-[10px] font-bold text-slate-700 hover:text-slate-900 px-3.5 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl transition-all cursor-pointer active:scale-95"
+                  title="Log out of Auth0"
+                >
+                  Log out
+                </button>
               </div>
             ) : (
               <div className="flex items-center gap-2">
-                <SignInButton mode="modal">
-                  <button className="text-[10px] font-bold text-slate-700 hover:text-lime-800 px-3.5 py-1.5 bg-lime-50 hover:bg-lime-100 border border-lime-200 rounded-xl transition-all cursor-pointer active:scale-95">
-                    Sign In
-                  </button>
-                </SignInButton>
-                <SignUpButton mode="modal">
-                  <button className="text-[10px] font-bold text-white hover:text-white px-3.5 py-1.5 bg-lime-500 hover:bg-lime-600 border border-lime-500 rounded-xl transition-all cursor-pointer active:scale-95">
-                    Sign Up
-                  </button>
-                </SignUpButton>
+                <button
+                  onClick={() => loginWithRedirect()}
+                  className="text-[10px] font-bold text-slate-700 hover:text-lime-800 px-3.5 py-1.5 bg-lime-50 hover:bg-lime-100 border border-lime-200 rounded-xl transition-all cursor-pointer active:scale-95"
+                >
+                  Sign In
+                </button>
+                <button
+                  onClick={() =>
+                    loginWithRedirect({ authorizationParams: { screen_hint: 'signup' } })
+                  }
+                  className="text-[10px] font-bold text-white hover:text-white px-3.5 py-1.5 bg-lime-500 hover:bg-lime-600 border border-lime-500 rounded-xl transition-all cursor-pointer active:scale-95"
+                >
+                  Sign Up
+                </button>
               </div>
             )}
 

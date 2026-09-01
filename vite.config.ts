@@ -17,6 +17,12 @@ export default defineConfig(() => {
       hmr: process.env.DISABLE_HMR !== 'true',
       // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
+      // Pin to 3000 with strictPort so the Auth0 callback URL never drifts.
+      // (server.js drives the actual Express listener; this is for Vite's
+      // own middleware/HMR port, which it must not silently swap.)
+      port: 3000,
+      strictPort: true,
+      host: '0.0.0.0',
     },
   };
 });
