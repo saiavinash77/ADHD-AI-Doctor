@@ -42,8 +42,7 @@ import ScoreHistory from './components/ScoreHistory';
 import { getPersonalizedTips, getMedicalGuidance } from './tipsData';
 import { jsPDF } from 'jspdf';
 
-// Auth0 imports
-import { useAuth0 } from '@auth0/auth0-react';
+// Firebase imports
 import {
   collection,
   addDoc,
@@ -56,29 +55,10 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebase';
 
-// Detect whether Auth0 is properly configured (both VITE_AUTH0_DOMAIN and
-// VITE_AUTH0_CLIENT_ID present). Computed at module load so the conditional
-// hook calls below always take the same branch on every render.
-const isAuth0Configured =
-  typeof import.meta.env.VITE_AUTH0_DOMAIN === 'string' &&
-  import.meta.env.VITE_AUTH0_DOMAIN.length > 0 &&
-  typeof import.meta.env.VITE_AUTH0_CLIENT_ID === 'string' &&
-  import.meta.env.VITE_AUTH0_CLIENT_ID.length > 0;
-
 export default function App() {
-  // useAuth0() throws when there is no <Auth0Provider> in the tree. Gate
-  // it on the module-level config flag so the app still renders without
-  // auth configured. The condition never changes between renders, so React's
-  // hook order is stable.
-  /* eslint-disable react-hooks/rules-of-hooks */
-  const auth0 = isAuth0Configured ? useAuth0() : null;
-  /* eslint-enable react-hooks/rules-of-hooks */
-  // Re-derive the same names the rest of the component already uses
-  // (user / userLoaded) so the sync logic and UI don't need restructuring.
-  const user = auth0?.user ?? null;
-  const userLoaded = auth0 ? !auth0.isLoading : true;
-  const loginWithRedirect = auth0?.loginWithRedirect ?? (() => {});
-  const auth0Logout = auth0?.logout ?? (() => {});
+  // Auth was removed — the app now runs as a guest-only screening tool.
+  // No sign-in, no sign-up, no user accounts. All persistent state is keyed
+  // by a per-device ID stored in localStorage.
   
   const [screen, setScreen] = useState<ScreenState>('WELCOME');
   const [currentQuestionIdx, setCurrentQuestionIdx] = useState<number>(0);
@@ -93,10 +73,6 @@ export default function App() {
   // Sync Registry state
   const [savedResultId, setSavedResultId] = useState<string | null>(null);
   const [refreshHistoryTrigger, setRefreshHistoryTrigger] = useState<number>(0);
-
-  // Auth state
-  const [userLoading, setUserLoading] = useState<boolean>(!userLoaded);
-  const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
 
   // Generate or retrieve a persistent guest Device ID
   const getOrCreateDeviceId = () => {
@@ -142,64 +118,6 @@ export default function App() {
       console.error("Failed to migrate guest scores to user account:", error);
     }
   };
-
-  // Listen for Auth changes (Auth0)
-  useEffect(() => {
-    setUserLoading(!userLoaded);
-
-    if (userLoaded && user) {
-      // User is signed in with Auth0
-      const syncUserData = async () => {
-        try {
-          // Auth0 user identifier: `user.sub` (e.g. "auth0|abc123"). Fall
-          // back to `user.email` so that test/social logins without a stable
-          // sub still get a usable document id.
-          const uid = (user as any).sub || user.email || 'unknown';
-          const userEmail = user.email;
-          const userDocRef = doc(db, 'users', uid);
-          const userDoc = await getDoc(userDocRef);
-
-          if (userDoc.exists()) {
-            const data = userDoc.data();
-            if (data.hasPaid) {
-              setHasPaid(true);
-              localStorage.setItem('adhd_clinical_terminal_paid', 'true');
-            } else {
-              const localPaid = localStorage.getItem('adhd_clinical_terminal_paid') === 'true';
-              if (localPaid) {
-                await setDoc(userDocRef, { hasPaid: true, email: userEmail }, { merge: true });
-                setHasPaid(true);
-              } else {
-                setHasPaid(false);
-              }
-            }
-          } else {
-            const localPaid = localStorage.getItem('adhd_clinical_terminal_paid') === 'true';
-            await setDoc(userDocRef, {
-              email: userEmail,
-              createdAt: new Date().toISOString(),
-              hasPaid: localPaid
-            });
-            if (localPaid) setHasPaid(true);
-          }
-
-          await syncGuestDataToUser(uid);
-        } catch (error) {
-          console.error("Error syncing user data:", error);
-        }
-      };
-
-      syncUserData();
-    } else if (userLoaded && !user) {
-      const localPaid = localStorage.getItem('adhd_clinical_terminal_paid') === 'true';
-      setHasPaid(localPaid);
-
-      // Redirect to welcome screen if not signed in and trying to access protected screens
-      if (screen !== 'WELCOME') {
-        setScreen('WELCOME');
-      }
-    }
-  }, [user, userLoaded]);
 
   const [showPrivacyModal, setShowPrivacyModal] = useState<boolean>(false);
   const [privacyModalTab, setPrivacyModalTab] = useState<'privacy' | 'terms'>('privacy');
@@ -257,7 +175,7 @@ export default function App() {
         body: JSON.stringify({ 
           priceId: 'pdt_0NirrSJQFlEwHSDF1I0ni',
           quantity: 1,
-          customerId: user?.email,
+          customerId: undefined,
           successUrl: `${window.location.origin}?payment=success`,
           cancelUrl: `${window.location.origin}?payment=cancelled`
         })
@@ -359,12 +277,7 @@ export default function App() {
   };
 
   const startScreeningDirectly = () => {
-    // Require authentication before starting assessment
-    if (!user) {
-      alert('Please sign in to take the ADHD assessment');
-      return;
-    }
-    
+    // Auth was removed — guest mode allows anyone to start the assessment.
     setResponses([]);
     setSavedResultId(null);
     setCurrentQuestionIdx(0);
@@ -438,7 +351,7 @@ export default function App() {
   const handleSaveToRegistry = async () => {
     try {
       const devId = getOrCreateDeviceId();
-      const currentUserId = user ? user.id : devId;
+      const currentUserId = devId;
 
       const recordData = {
         userId: currentUserId,
@@ -566,7 +479,7 @@ export default function App() {
       doc.setFontSize(8.5);
       doc.setTextColor(15, 23, 42);
       doc.text(`Completed Date: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`, 55, 138);
-      doc.text(`Identifier: ${user?.email || 'Secure Local Sandbox Guest'}`, 280, 138);
+      doc.text(`Identifier: ${'Secure Local Sandbox Guest'}`, 280, 138);
       doc.text(`Participant Profile: Age: ${profileForm.age || 'N/A'}  |  Country: ${profileForm.country || 'N/A'}  |  Gender: ${profileForm.gender || 'Prefer not to say'}`, 55, 151);
 
       // 3. Section: Main Score Boxes
@@ -683,7 +596,7 @@ export default function App() {
         ["Parameter", "Value"],
         ["Report Title", "ADHD Adult Self-Report Scale (ASRS v1.1) Clinical Report"],
         ["Assessment Date", new Date().toISOString()],
-        ["Identifier", user?.email || 'Secure Local Sandbox Guest'],
+        ["Identifier", 'Secure Local Sandbox Guest'],
         ["Participant Age", profileForm.age || 'N/A'],
         ["Participant Country", profileForm.country || 'N/A'],
         ["Participant Gender", profileForm.gender || 'N/A'],
@@ -882,58 +795,6 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2.5">
-            {/* Auth Header Controls (Auth0) */}
-            {!isAuth0Configured ? (
-              <span className="text-[10px] font-bold text-slate-400" title="Set VITE_AUTH0_DOMAIN and VITE_AUTH0_CLIENT_ID in .env.local to enable sign-in">
-                Auth disabled
-              </span>
-            ) : userLoading ? (
-              <span className="text-[10px] font-bold text-slate-400">Loading auth...</span>
-            ) : user ? (
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200 max-w-[150px] truncate select-text" title={user.email || ''}>
-                  {user.email}
-                </span>
-                <button
-                  onClick={() =>
-                    auth0Logout({ logoutParams: { returnTo: window.location.origin } })
-                  }
-                  className="text-[10px] font-bold text-slate-700 hover:text-slate-900 px-3.5 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl transition-all cursor-pointer active:scale-95"
-                  title="Log out of Auth0"
-                >
-                  Log out
-                </button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() =>
-                    loginWithRedirect({
-                      authorizationParams: {
-                        connection: 'Username-Password-Authentication',
-                      },
-                    })
-                  }
-                  className="text-[10px] font-bold text-slate-700 hover:text-lime-800 px-3.5 py-1.5 bg-lime-50 hover:bg-lime-100 border border-lime-200 rounded-xl transition-all cursor-pointer active:scale-95"
-                >
-                  Sign In
-                </button>
-                <button
-                  onClick={() =>
-                    loginWithRedirect({
-                      authorizationParams: {
-                        connection: 'Username-Password-Authentication',
-                        screen_hint: 'signup',
-                      },
-                    })
-                  }
-                  className="text-[10px] font-bold text-white hover:text-white px-3.5 py-1.5 bg-lime-500 hover:bg-lime-600 border border-lime-500 rounded-xl transition-all cursor-pointer active:scale-95"
-                >
-                  Sign Up
-                </button>
-              </div>
-            )}
-
             {screen !== 'WELCOME' && (
               <button
                 id="reset-screener-btn"
@@ -1218,37 +1079,18 @@ export default function App() {
                     <div className="flex items-center gap-2">
                       <Activity className="w-4 h-4 text-lime-600 shrink-0" />
                       <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
-                        {user ? 'Authenticated Workspace' : 'Sign In Required'}
+                        Local Workspace
                       </span>
                     </div>
-                    {!user && (
-                      <p className="text-[10px] text-amber-600 font-bold flex items-center gap-1.5">
-                        <Lock className="w-3 h-3" />
-                        Please sign in to access the assessment
-                      </p>
-                    )}
                   </div>
 
                   <button
                     id="begin-screener-btn"
                     onClick={startScreeningDirectly}
-                    className={`flex items-center justify-center gap-2 py-4 px-8 rounded-2xl text-xs uppercase tracking-widest transition-all shadow-md select-none transform ${
-                      user 
-                        ? 'bg-lime-500 hover:bg-lime-600 hover:shadow-lg hover:shadow-lime-200/50 text-slate-900 font-extrabold cursor-pointer hover:-translate-y-0.5 active:scale-95'
-                        : 'bg-slate-200 text-slate-400 font-bold cursor-not-allowed'
-                    }`}
+                    className="flex items-center justify-center gap-2 py-4 px-8 rounded-2xl text-xs uppercase tracking-widest transition-all shadow-md select-none transform bg-lime-500 hover:bg-lime-600 hover:shadow-lg hover:shadow-lime-200/50 text-slate-900 font-extrabold cursor-pointer hover:-translate-y-0.5 active:scale-95"
                   >
-                    {user ? (
-                      <>
-                        Launch Assessment Check
-                        <ChevronRight className="w-4 h-4" />
-                      </>
-                    ) : (
-                      <>
-                        <Lock className="w-4 h-4" />
-                        Sign In to Start
-                      </>
-                    )}
+                    Launch Assessment Check
+                    <ChevronRight className="w-4 h-4" />
                   </button>
                 </div>
 
@@ -1268,7 +1110,7 @@ export default function App() {
                   <ScoreHistory 
                     onSelectHistoricalReport={handleSelectHistoricalReport}
                     refreshTrigger={refreshHistoryTrigger}
-                    userId={user ? user.id : null}
+                    userId={null}
                   />
                 </div>
 
