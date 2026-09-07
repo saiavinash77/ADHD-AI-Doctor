@@ -907,14 +907,25 @@ export default function App() {
             ) : (
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => loginWithRedirect()}
+                  onClick={() =>
+                    loginWithRedirect({
+                      authorizationParams: {
+                        connection: 'Username-Password-Authentication',
+                      },
+                    })
+                  }
                   className="text-[10px] font-bold text-slate-700 hover:text-lime-800 px-3.5 py-1.5 bg-lime-50 hover:bg-lime-100 border border-lime-200 rounded-xl transition-all cursor-pointer active:scale-95"
                 >
                   Sign In
                 </button>
                 <button
                   onClick={() =>
-                    loginWithRedirect({ authorizationParams: { screen_hint: 'signup' } })
+                    loginWithRedirect({
+                      authorizationParams: {
+                        connection: 'Username-Password-Authentication',
+                        screen_hint: 'signup',
+                      },
+                    })
                   }
                   className="text-[10px] font-bold text-white hover:text-white px-3.5 py-1.5 bg-lime-500 hover:bg-lime-600 border border-lime-500 rounded-xl transition-all cursor-pointer active:scale-95"
                 >
